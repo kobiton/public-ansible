@@ -1,0 +1,116 @@
+---
+- name: Install deviceConnect on macOS
+  hosts: mac
+  gather_subset:
+    - min
+  vars:
+    arch_map:
+      arm64: osx-arm64
+      x86_64: osx-x64
+
+  pre_tasks:
+    - name: Verify this is macOS
+      ansible.builtin.assert:
+        that:
+          - ansible_os_family == 'Darwin'
+        fail_msg: "This playbook only supports macOS hosts"
+
+    - name: Validate pkg_file is provided
+      ansible.builtin.assert:
+        that:
+          - pkg_file is defined
+          - pkg_file | length > 0
+        fail_msg: "pkg_file is required. Pass it with -e pkg_file=<filename>"
+
+    - name: Validate pkg filename format
+      ansible.builtin.assert:
+        that:
+          - pkg_file | basename | regex_search('^deviceConnect\.(.+)\.pkg$')
+        fail_msg: >-
+          pkg_file must match pattern deviceConnect.<version>.pkg,
+          got: {{ pkg_file | basename }}
+
+    - name: Validate supported architecture
+      ansible.builtin.assert:
+        that:
+          - ansible_architecture in arch_map
+        fail_msg: >-
+          Unsupported architecture: {{ ansible_architecture }}.
+          Supported: {{ arch_map.keys() | list | join(', ') }}
+
+    - name: Validate source file exists
+      ansible.builtin.stat:
+        path: "{{ pkg_file }}"
+      register: pkg_file_stat
+      delegate_to: localhost
+
+    - name: Assert source file exists
+      ansible.builtin.assert:
+        that:
+          - pkg_file_stat.stat.exists
+        fail_msg: "Source file not found: {{ pkg_file }}"
+
+  tasks:
+    - name: Extract desired version from pkg filename
+      ansible.builtin.set_fact:
+        desired_version: >-
+          {{ (pkg_file | basename | regex_search('^deviceConnect\.(.+)\.pkg$', '\1'))[0] }}
+
+    - name: Determine dc-services executable path
+      ansible.builtin.set_fact:
+        dc_services_path: >-
+          /usr/local/deviceconnect/Services/{{ arch_map[ansible_architecture] }}/dc-services
+
+    - name: Check installed deviceConnect version
+      # Expected output: 4.23.0.202501010000.production@abc1234def
+      ansible.builtin.command: "{{ dc_services_path }} --version"
+      register: dc_version_output
+      changed_when: false
+      failed_when: false
+
+    - name: Set installed version
+      ansible.builtin.set_fact:
+        installed_version: >-
+          {{ dc_version_output.stdout_lines[0]
+             if dc_version_output.rc == 0 else '' }}
+
+    - name: Show version comparison
+      ansible.builtin.debug:
+        msg: >-
+          Desired: {{ desired_version }},
+          Installed: {{ installed_version or '(none)' }},
+          Action: {{ 'skip' if desired_version == installed_version else 'install' }}
+
+    - name: Copy and install deviceConnect PKG
+      when: desired_version != installed_version
+      block:
+        - name: Copy the deviceConnect PKG to the server
+          become: true
+          ansible.builtin.copy:
+            src: "{{ pkg_file }}"
+            dest: "/tmp/{{ pkg_file | basename }}"
+            mode: "0644"
+
+        - name: Install the deviceConnect PKG
+          become: true
+          ansible.builtin.command:
+            cmd: "installer -pkg /tmp/{{ pkg_file | basename }} -target /"
+          register: install_result
+          changed_when: install_result.rc == 0
+          failed_when: install_result.rc != 0
+
+        - name: Remove the deviceConnect PKG from /tmp
+          become: true
+          ansible.builtin.file:
+            path: "/tmp/{{ pkg_file | basename }}"
+            state: absent
+
+        - name: Verify installed version matches desired version
+          ansible.builtin.command: "{{ dc_services_path }} --version"
+          register: post_install_version
+          changed_when: false
+          failed_when: post_install_version.stdout_lines[0] != desired_version
+
+        - name: Show installed version
+          ansible.builtin.debug:
+            msg: "deviceConnect {{ desired_version }} installed successfully"

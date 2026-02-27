@@ -1,0 +1,117 @@
+---
+- name: Set up macOS host
+  hosts: mac
+  gather_subset:
+    - min
+  vars:
+    arch_map:
+      arm64: aarch64
+      x86_64: x64
+
+  pre_tasks:
+    - name: Verify this is macOS
+      ansible.builtin.assert:
+        that:
+          - ansible_os_family == 'Darwin'
+        fail_msg: "This playbook only supports macOS hosts"
+
+    - name: Validate corretto_pkg is provided
+      ansible.builtin.assert:
+        that:
+          - corretto_pkg is defined
+          - corretto_pkg | length > 0
+        fail_msg: "corretto_pkg is required. Pass it with -e corretto_pkg=<filename>"
+
+    - name: Validate pkg filename format
+      ansible.builtin.assert:
+        that:
+          - corretto_pkg | basename | regex_search('^amazon-corretto-.+-macosx-(aarch64|x64)\.pkg$')
+        fail_msg: >-
+          corretto_pkg must match pattern
+          amazon-corretto-<version>-macosx-<arch>.pkg,
+          got: {{ corretto_pkg | basename }}
+
+    - name: Validate architecture matches host
+      ansible.builtin.assert:
+        that:
+          - corretto_pkg | basename is search('macosx-' + arch_map[ansible_architecture])
+        fail_msg: >-
+          Package architecture does not match host.
+          Host: {{ ansible_architecture }} ({{ arch_map[ansible_architecture] }}),
+          Package: {{ corretto_pkg | basename }}
+      when: ansible_architecture in arch_map
+
+    - name: Validate source file exists
+      ansible.builtin.stat:
+        path: "{{ corretto_pkg }}"
+      register: corretto_pkg_stat
+      delegate_to: localhost
+
+    - name: Assert source file exists
+      ansible.builtin.assert:
+        that:
+          - corretto_pkg_stat.stat.exists
+        fail_msg: "Source file not found: {{ corretto_pkg }}"
+
+  tasks:
+    - name: Extract desired version from pkg filename
+      ansible.builtin.set_fact:
+        desired_version: >-
+          {{ (corretto_pkg | basename | regex_search('^amazon-corretto-(.+)-macosx-.+\.pkg$', '\1'))[0] }}
+
+    - name: Check installed Corretto version
+      # Expected output line: OpenJDK Runtime Environment Corretto-21.0.10.7.1 (build ...)
+      ansible.builtin.command: java --version
+      register: java_version_output
+      changed_when: false
+      failed_when: false
+
+    - name: Extract installed Corretto version
+      vars:
+        corretto_line: >-
+          {{ java_version_output.stdout
+             | regex_search('Corretto-([^\s]+)', '\1')
+             | default([]) }}
+      ansible.builtin.set_fact:
+        installed_version: "{{ corretto_line[0] | default('') }}"
+
+    - name: Show version comparison
+      ansible.builtin.debug:
+        msg: >-
+          Desired: {{ desired_version }},
+          Installed: {{ installed_version or '(none)' }},
+          Action: {{ 'skip' if desired_version == installed_version else 'install' }}
+
+    - name: Copy and install Corretto PKG
+      when: desired_version != installed_version
+      block:
+        - name: Copy the Corretto PKG to the server
+          become: true
+          ansible.builtin.copy:
+            src: "{{ corretto_pkg }}"
+            dest: "/tmp/{{ corretto_pkg | basename }}"
+            mode: "0644"
+
+        - name: Install the Corretto PKG
+          become: true
+          ansible.builtin.command:
+            cmd: "installer -pkg /tmp/{{ corretto_pkg | basename }} -target /"
+          register: install_result
+          changed_when: install_result.rc == 0
+          failed_when: install_result.rc != 0
+
+        - name: Remove the Corretto PKG from /tmp
+          become: true
+          ansible.builtin.file:
+            path: "/tmp/{{ corretto_pkg | basename }}"
+            state: absent
+
+        - name: Verify installed version matches desired version
+          ansible.builtin.command: java --version
+          register: post_install_output
+          changed_when: false
+          failed_when: post_install_output.stdout is not search('Corretto-' + desired_version)
+
+        - name: Show installed version
+          ansible.builtin.debug:
+            msg: "Amazon Corretto {{ desired_version }} installed successfully"
