@@ -1,0 +1,19 @@
+---
+all:
+  children:
+    mac:
+      hosts:
+        standalone-mac-01:
+          ansible_host: 10.0.1.10 # UPDATE ME!
+      vars:
+        ansible_user: your-mac-username # Provided by your Kobiton contact
+        ansible_password: "{{ mac_password }}"
+        ansible_become_password: "{{ mac_password }}"
+    gem:
+      hosts:
+        standalone-gem-01:
+          ansible_host: 10.0.2.10 # UPDATE ME!
+      vars:
+        ansible_user: your-gem-username # Provided by your Kobiton contact
+        ansible_password: "{{ gem_password }}"
+        ansible_become_password: "{{ gem_password }}"

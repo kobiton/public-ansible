@@ -1,0 +1,8 @@
+# Ansible vault and variable files that may contain secrets
+group_vars/
+
+# Ansible retry files
+*.retry
+
+# Claude Code local settings
+.claude/

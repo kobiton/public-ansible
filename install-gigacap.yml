@@ -1,0 +1,125 @@
+---
+- name: Install gigacap
+  hosts: gem
+  serial: 1
+  gather_subset:
+    - min
+  vars:
+    # Matches: gigacap 4.22.0.202501010000.production@abc1234
+    # Captures: \1=4.23.0  \2=13b05d6
+    gigacap_version_regex: 'gigacap ([^.]+\.[^.]+\.[^.]+)\..*@([0-9a-f]+)'
+  pre_tasks:
+    - name: Verify this is a Debian-based system
+      ansible.builtin.assert:
+        that:
+          - ansible_os_family == 'Debian'
+        fail_msg: "This playbook only supports Debian-based hosts (apt)"
+
+    - name: Validate deb_file is provided
+      ansible.builtin.assert:
+        that:
+          - deb_file is defined
+          - deb_file | length > 0
+        fail_msg: "deb_file is required. Pass it with -e deb_file=<filename>"
+
+    - name: Validate deb filename format
+      ansible.builtin.assert:
+        that:
+          - deb_file | basename | regex_search('gigacap_([^_]+)_')
+        fail_msg: >-
+          deb_file must match pattern gigacap_<version>+<commit>_<arch>.deb,
+          got: {{ deb_file | basename }}
+
+    - name: Validate source file exists
+      ansible.builtin.stat:
+        path: "{{ deb_file }}"
+      register: deb_file_stat
+      delegate_to: localhost
+
+    - name: Assert source file exists
+      ansible.builtin.assert:
+        that:
+          - deb_file_stat.stat.exists
+        fail_msg: "Source file not found: {{ deb_file }}"
+
+  tasks:
+    - name: Extract target version from deb filename
+      ansible.builtin.set_fact:
+        desired_version: >-
+          {{ (deb_file | basename | regex_search('gigacap_([^_]+)_', '\1'))[0] }}
+
+    - name: Check installed gigacap version
+      # Expected output: gigacap 4.22.0.202501010000.production@abc1234
+      ansible.builtin.command: gigacap version
+      register: gigacap_version_output
+      changed_when: false
+      failed_when: false
+
+    - name: Extract installed version
+      vars:
+        version_line: "{{ gigacap_version_output.stdout_lines[0] | default('') }}"
+        version_parts: >-
+          {{ version_line
+             | regex_search(gigacap_version_regex, '\1', '\2')
+             | default([]) }}
+      ansible.builtin.set_fact:
+        installed_version: "{{ version_parts | join('+') }}"
+      when: gigacap_version_output.rc == 0
+
+    - name: Set empty version when gigacap is not installed
+      ansible.builtin.set_fact:
+        installed_version: ""
+      when: gigacap_version_output.rc != 0
+
+    - name: Show version comparison
+      ansible.builtin.debug:
+        msg: >-
+          Desired: {{ desired_version }},
+          Installed: {{ installed_version or '(none)' }},
+          Action: {{ 'skip' if desired_version == installed_version else 'install' }}
+
+    - name: Copy and install gigacap DEB
+      when: desired_version != installed_version
+      block:
+        - name: Copy the gigacap DEB to the server
+          become: true
+          ansible.builtin.copy:
+            src: "{{ deb_file }}"
+            dest: "/tmp/{{ deb_file | basename }}"
+            mode: "0644"
+
+        - name: Install the gigacap DEB
+          become: true
+          ansible.builtin.apt:
+            deb: "/tmp/{{ deb_file | basename }}"
+          notify: Restart gigacap
+
+        - name: Remove the gigacap DEB from /tmp
+          become: true
+          ansible.builtin.file:
+            path: "/tmp/{{ deb_file | basename }}"
+            state: absent
+
+        - name: Verify installed version matches desired version
+          ansible.builtin.command: gigacap version
+          register: post_install_output
+          changed_when: false
+          vars:
+            version_line: "{{ post_install_output.stdout_lines[0] | default('') }}"
+            version_parts: >-
+              {{ version_line
+                 | regex_search(gigacap_version_regex, '\1', '\2')
+                 | default([]) }}
+            post_install_version: "{{ version_parts | join('+') }}"
+          failed_when: post_install_version != desired_version
+
+        - name: Show installed version
+          ansible.builtin.debug:
+            msg: "gigacap {{ desired_version }} installed successfully"
+
+  handlers:
+    - name: Restart gigacap
+      become: true
+      ansible.builtin.systemd:
+        name: gigacap
+        state: restarted
