@@ -1,6 +1,6 @@
 # Kobiton Public Ansible
 
-Ansible code shared with the public. Includes playbooks for setting up macOS hosts, installing deviceConnect on macOS hosts, and installing gigacap on Ubuntu hosts.
+Ansible code shared with the public. Includes playbooks for setting up macOS hosts, installing deviceConnect and deviceShare on macOS hosts, and installing gigacap on Ubuntu hosts.
 
 ## Prerequisites
 
@@ -8,7 +8,7 @@ Ansible code shared with the public. Includes playbooks for setting up macOS hos
 - [sshpass](https://sourceforge.net/projects/sshpass/) — the inventory is configured for password-based SSH authentication, which requires `sshpass` on the Ansible controller
 - SSH access to all target hosts
 - `become` (sudo) privileges on each target host — the inventory configures `ansible_become_password` to use the same password as SSH
-- The deviceConnect `.pkg` or gigacap `.deb` installer file downloaded locally
+- The deviceConnect or deviceShare `.pkg`, or gigacap `.deb`, installer file downloaded locally
 
 For development:
 
@@ -31,6 +31,7 @@ Or by downloading and extracting a ZIP of the repository using the **Code > Down
 .
 ├── .github/workflows/ci.yml   # CI: runs lint on PRs and pushes to main
 ├── install-deviceconnect.yml   # Playbook: install deviceConnect on macOS
+├── install-deviceshare.yml     # Playbook: install deviceShare on macOS
 ├── install-gigacap.yml         # Playbook: install gigacap on Ubuntu hosts
 ├── inventory.yml.example       # Example inventory (copy to inventory.yml)
 ├── Makefile                    # Lint target
@@ -39,7 +40,7 @@ Or by downloading and extracting a ZIP of the repository using the **Code > Down
 
 ## Setting Up the Inventory
 
-The playbooks expect an inventory file at `inventory.yml` with two host groups: `mac` (macOS hosts) and `gem` (Ubuntu hosts). This file is gitignored since it contains environment-specific values. An example is provided to get you started.
+The playbooks expect an inventory file at `inventory.yml` with three host groups: `mac` (macOS hosts), `gem` (Ubuntu hosts) and `deviceshare` (the macOS hosts that run deviceShare). This file is gitignored since it contains environment-specific values. An example is provided to get you started.
 
 1. Copy the example inventory:
 
@@ -47,7 +48,7 @@ The playbooks expect an inventory file at `inventory.yml` with two host groups: 
    cp inventory.yml.example inventory.yml
    ```
 
-   Or create your own `inventory.yml` from scratch — just ensure it defines `mac` and `gem` groups.
+   Or create your own `inventory.yml` from scratch — just ensure it defines `mac`, `gem` and `deviceshare` groups.
 
 2. Open `inventory.yml` in your editor. The file has the following structure:
 
@@ -64,6 +65,9 @@ The playbooks expect an inventory file at `inventory.yml` with two host groups: 
            ansible_user: your-mac-username  # Provided by your Kobiton contact
            ansible_password: "{{ mac_password }}"
            ansible_become_password: "{{ mac_password }}"
+       deviceshare:
+         hosts:
+           standalone-mac-01:  # One or two of the mac hosts
        gem:
          hosts:
            standalone-gem-01:
@@ -76,7 +80,7 @@ The playbooks expect an inventory file at `inventory.yml` with two host groups: 
            ansible_become_password: "{{ gem_password }}"
    ```
 
-3. Update the hosts under each group to match your environment. For each host, set `ansible_host` to its IP address or hostname. Add or remove host entries as needed.
+3. Update the hosts under each group to match your environment. For each host, set `ansible_host` to its IP address or hostname. Add or remove host entries as needed. Under `deviceshare`, list the one or two `mac` hosts that run deviceShare by name only; they take their connection settings from the `mac` group.
 
 4. If needed, update the `ansible_user` under each group's `vars` section to match the SSH user for that group.
 
@@ -159,6 +163,38 @@ The `install-deviceconnect.yml` playbook installs a deviceConnect `.pkg` on all 
    ansible-playbook install-deviceconnect.yml \
      -i inventory.yml \
      -e pkg_file=/path/to/deviceConnect.<version>.pkg \
+     -e mac_password="your-password"
+   ```
+
+3. Review the output. For each host, the playbook will print a version comparison showing whether it will install or skip.
+
+## Installing deviceShare
+
+The `install-deviceshare.yml` playbook installs or updates the deviceShare signing service on all hosts in the `deviceshare` group. deviceShare runs on one of the deviceConnect hosts, or on two for redundancy, so list only those in the group. It compares the version from the package filename against the currently installed version and skips hosts that are already up to date. The package restarts the signing service itself, and an update keeps the existing configuration, keychains and provisioning profiles.
+
+**Package filename format:** `deviceshare-<version>-setup.pkg`, as downloaded (e.g., `deviceshare-2610.61447.0+master.467a529-setup.pkg`). The `<version>` portion must exactly match the version reported by `deviceshare -V`.
+
+> **First install:** the playbook installs deviceShare but does not set up app signing. On a new host, follow [Install deviceShare](https://admin-docs.kobiton.com/device-host-setup/install-deviceshare/) from **Install certificate files** onwards once the playbook has run.
+
+1. Place the deviceShare `.pkg` file on your local machine (the Ansible controller).
+
+2. Run the playbook, passing the path to the `.pkg` file.
+
+   Using Ansible Vault:
+
+   ```bash
+   ansible-playbook install-deviceshare.yml \
+     -i inventory.yml \
+     -e pkg_file=/path/to/deviceshare-<version>-setup.pkg \
+     --ask-vault-pass
+   ```
+
+   Using command-line variables:
+
+   ```bash
+   ansible-playbook install-deviceshare.yml \
+     -i inventory.yml \
+     -e pkg_file=/path/to/deviceshare-<version>-setup.pkg \
      -e mac_password="your-password"
    ```
 

@@ -1,0 +1,105 @@
+---
+- name: Install deviceShare on macOS
+  hosts: deviceshare
+  gather_subset:
+    - min
+  vars:
+    # deviceshare-<version>-setup.pkg, as downloaded
+    pkg_file_regex: '^deviceshare-(.+)-setup\.pkg$'
+    deviceshare_path: /usr/local/kobiton/deviceshare/deviceshare
+
+  pre_tasks:
+    - name: Verify this is macOS
+      ansible.builtin.assert:
+        that:
+          - ansible_os_family == 'Darwin'
+        fail_msg: "This playbook only supports macOS hosts"
+
+    - name: Validate pkg_file is provided
+      ansible.builtin.assert:
+        that:
+          - pkg_file is defined
+          - pkg_file | length > 0
+        fail_msg: "pkg_file is required. Pass it with -e pkg_file=<filename>"
+
+    - name: Validate pkg filename format
+      ansible.builtin.assert:
+        that:
+          - pkg_file | basename is search(pkg_file_regex)
+        fail_msg: >-
+          pkg_file must match pattern deviceshare-<version>-setup.pkg,
+          got: {{ pkg_file | basename }}
+
+    - name: Validate source file exists
+      ansible.builtin.stat:
+        path: "{{ pkg_file }}"
+      register: pkg_file_stat
+      delegate_to: localhost
+
+    - name: Assert source file exists
+      ansible.builtin.assert:
+        that:
+          - pkg_file_stat.stat.exists
+        fail_msg: "Source file not found: {{ pkg_file }}"
+
+  tasks:
+    - name: Extract desired version from pkg filename
+      ansible.builtin.set_fact:
+        desired_version: >-
+          {{ pkg_file | basename | regex_replace(pkg_file_regex, '\1') }}
+
+    - name: Check installed deviceShare version
+      # Expected output: deviceShare 2610.61447.0+master.467a529
+      ansible.builtin.command: "{{ deviceshare_path }} -V"
+      register: deviceshare_version_output
+      changed_when: false
+      failed_when: false
+
+    - name: Set installed version
+      ansible.builtin.set_fact:
+        installed_version: >-
+          {{ deviceshare_version_output.stdout | regex_replace('^deviceShare ', '')
+             if deviceshare_version_output.rc == 0 else '' }}
+
+    - name: Show version comparison
+      ansible.builtin.debug:
+        msg: >-
+          Desired: {{ desired_version }},
+          Installed: {{ installed_version or '(none)' }},
+          Action: {{ 'skip' if desired_version == installed_version else 'install' }}
+
+    # The package stops the signing service before installing and starts it again afterwards,
+    # and keeps an existing deviceshare_config.toml, keychains and provisioning profiles.
+    - name: Copy and install deviceShare PKG
+      when: desired_version != installed_version
+      block:
+        - name: Copy the deviceShare PKG to the server
+          become: true
+          ansible.builtin.copy:
+            src: "{{ pkg_file }}"
+            dest: "/tmp/{{ pkg_file | basename }}"
+            mode: "0644"
+
+        - name: Install the deviceShare PKG
+          become: true
+          ansible.builtin.command:
+            cmd: "installer -pkg /tmp/{{ pkg_file | basename }} -target /"
+          register: install_result
+          changed_when: install_result.rc == 0
+          failed_when: install_result.rc != 0
+
+        - name: Remove the deviceShare PKG from /tmp
+          become: true
+          ansible.builtin.file:
+            path: "/tmp/{{ pkg_file | basename }}"
+            state: absent
+
+        - name: Verify installed version matches desired version
+          ansible.builtin.command: "{{ deviceshare_path }} -V"
+          register: post_install_version
+          changed_when: false
+          failed_when: post_install_version.stdout != 'deviceShare ' ~ desired_version
+
+        - name: Show installed version
+          ansible.builtin.debug:
+            msg: "deviceShare {{ desired_version }} installed successfully"
