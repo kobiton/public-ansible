@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0](https://github.com/kobiton/public-ansible/compare/v1.0.1...v1.1.0) (2026-11-04)
+
+
+### Features
+
+* add a playbook to install deviceShare ([#10](https://github.com/kobiton/public-ansible/issues/10)) ([9df924d](https://github.com/kobiton/public-ansible/commit/9df924db53e899cd99076f817d339e848741b555))
+
 ## [1.0.1](https://github.com/kobiton/public-ansible/compare/v1.0.0...v1.0.1) (2026-11-04)
 
 
