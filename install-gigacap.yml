@@ -8,6 +8,8 @@
     # Prints "installed 2610.301328.0+10b8693-1"; the Version is the one in the deb's filename.
     # The status keeps a removed package, whose Version dpkg still remembers, from counting as installed.
     gigacap_dpkg_query: [dpkg-query, --show, "--showformat=${db:Status-Status} ${Version}", gigacap]
+    # gigacap-<version>-<arch>.deb as downloaded, or the Debian gigacap_<version>_<arch>.deb
+    deb_file_regex: '^gigacap[-_](.+)[-_][^-_]+\.deb$'
   pre_tasks:
     - name: Verify this is a Debian-based system
       ansible.builtin.assert:
@@ -25,10 +27,10 @@
     - name: Validate deb filename format
       ansible.builtin.assert:
         that:
-          - deb_file | basename | regex_search('gigacap_([^_]+)_')
+          - deb_file | basename is search(deb_file_regex)
         fail_msg: >-
-          deb_file must match pattern gigacap_<version>_<arch>.deb,
-          got: {{ deb_file | basename }}
+          deb_file must match pattern gigacap-<version>-<arch>.deb
+          or gigacap_<version>_<arch>.deb, got: {{ deb_file | basename }}
 
     - name: Validate source file exists
       ansible.builtin.stat:
@@ -46,7 +48,7 @@
     - name: Extract target version from deb filename
       ansible.builtin.set_fact:
         desired_version: >-
-          {{ (deb_file | basename | regex_search('gigacap_([^_]+)_', '\1'))[0] }}
+          {{ deb_file | basename | regex_replace(deb_file_regex, '\1') }}
 
     - name: Check installed gigacap version
       ansible.builtin.command:

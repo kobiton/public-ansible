@@ -138,7 +138,7 @@ The `setup-mac.yml` playbook sets up macOS hosts in the `mac` group. Currently i
 
 The `install-deviceconnect.yml` playbook installs a deviceConnect `.pkg` on all hosts in the `mac` group. It compares the version from the package filename against the currently installed version and skips hosts that are already up to date.
 
-**Package filename format:** `deviceConnect.<version>.pkg` — the `<version>` portion must exactly match the output of `dc-services --version`, which has the form `<YYMM>.<DDHHmm>.<build>+<branch>.<commit>` (e.g., `2610.301328.0+master.10b8693`).
+**Package filename format:** `deviceconnect-<version>-setup.pkg`, as downloaded (e.g., `deviceconnect-2610.210259.0+master.854304a-setup.pkg`). The `<version>` portion must exactly match the output of `dc-services --version`, which has the form `<YYMM>.<DDHHmm>.<build>+<branch>.<commit>`. The older `deviceConnect.<version>.pkg` name is also accepted.
 
 1. Place the deviceConnect `.pkg` file on your local machine (the Ansible controller).
 
@@ -149,7 +149,7 @@ The `install-deviceconnect.yml` playbook installs a deviceConnect `.pkg` on all 
    ```bash
    ansible-playbook install-deviceconnect.yml \
      -i inventory.yml \
-     -e pkg_file=/path/to/deviceConnect.<version>.pkg \
+     -e pkg_file=/path/to/deviceconnect-<version>-setup.pkg \
      --ask-vault-pass
    ```
 
@@ -158,7 +158,7 @@ The `install-deviceconnect.yml` playbook installs a deviceConnect `.pkg` on all 
    ```bash
    ansible-playbook install-deviceconnect.yml \
      -i inventory.yml \
-     -e pkg_file=/path/to/deviceConnect.<version>.pkg \
+     -e pkg_file=/path/to/deviceconnect-<version>-setup.pkg \
      -e mac_password="your-password"
    ```
 
@@ -168,7 +168,7 @@ The `install-deviceconnect.yml` playbook installs a deviceConnect `.pkg` on all 
 
 The `install-gigacap.yml` playbook installs a gigacap `.deb` package on all hosts in the `gem` group. It runs one host at a time (`serial: 1`) to limit the blast radius of a failed installation — if one host fails, the remaining hosts are skipped. It restarts the `gigacap` systemd service after a successful install.
 
-**Package filename format:** `gigacap_<version>_<arch>.deb`, the standard Debian package filename (e.g., `gigacap_2610.301328.0+10b8693-1_amd64.deb`). The `<version>` portion is compared against the version of the installed `gigacap` package, as reported by `dpkg-query`.
+**Package filename format:** `gigacap-<version>-<arch>.deb`, as downloaded (e.g., `gigacap-2610.191835.0+365f2f1-1-amd64.deb`), or the standard Debian `gigacap_<version>_<arch>.deb`. The `<version>` portion is compared against the version of the installed `gigacap` package, as reported by `dpkg-query`.
 
 1. Place the gigacap `.deb` file on your local machine (the Ansible controller).
 
@@ -179,7 +179,7 @@ The `install-gigacap.yml` playbook installs a gigacap `.deb` package on all host
    ```bash
    ansible-playbook install-gigacap.yml \
      -i inventory.yml \
-     -e deb_file=/path/to/gigacap_<version>_<arch>.deb \
+     -e deb_file=/path/to/gigacap-<version>-<arch>.deb \
      --ask-vault-pass
    ```
 
@@ -188,7 +188,7 @@ The `install-gigacap.yml` playbook installs a gigacap `.deb` package on all host
    ```bash
    ansible-playbook install-gigacap.yml \
      -i inventory.yml \
-     -e deb_file=/path/to/gigacap_<version>_<arch>.deb \
+     -e deb_file=/path/to/gigacap-<version>-<arch>.deb \
      -e gem_password="your-password"
    ```
 
