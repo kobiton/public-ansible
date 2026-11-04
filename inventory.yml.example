@@ -9,6 +9,9 @@ all:
         ansible_user: your-mac-username # Provided by your Kobiton contact
         ansible_password: "{{ mac_password }}"
         ansible_become_password: "{{ mac_password }}"
+    deviceshare:
+      hosts:
+        standalone-mac-01: # One or two of the mac hosts
     gem:
       hosts:
         standalone-gem-01:
