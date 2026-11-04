@@ -7,6 +7,8 @@
     arch_map:
       arm64: osx-arm64
       x86_64: osx-x64
+    # deviceconnect-<version>-setup.pkg as downloaded, or deviceConnect.<version>.pkg
+    pkg_file_regex: '^(?:deviceconnect-(.+)-setup|deviceConnect\.(.+))\.pkg$'
 
   pre_tasks:
     - name: Verify this is macOS
@@ -25,10 +27,10 @@
     - name: Validate pkg filename format
       ansible.builtin.assert:
         that:
-          - pkg_file | basename | regex_search('^deviceConnect\.(.+)\.pkg$')
+          - pkg_file | basename is search(pkg_file_regex)
         fail_msg: >-
-          pkg_file must match pattern deviceConnect.<version>.pkg,
-          got: {{ pkg_file | basename }}
+          pkg_file must match pattern deviceconnect-<version>-setup.pkg
+          or deviceConnect.<version>.pkg, got: {{ pkg_file | basename }}
 
     - name: Validate supported architecture
       ansible.builtin.assert:
@@ -54,7 +56,7 @@
     - name: Extract desired version from pkg filename
       ansible.builtin.set_fact:
         desired_version: >-
-          {{ (pkg_file | basename | regex_search('^deviceConnect\.(.+)\.pkg$', '\1'))[0] }}
+          {{ pkg_file | basename | regex_replace(pkg_file_regex, '\1\2') }}
 
     - name: Determine dc-services executable path
       ansible.builtin.set_fact:
@@ -62,7 +64,7 @@
           /usr/local/deviceconnect/Services/{{ arch_map[ansible_architecture] }}/dc-services
 
     - name: Check installed deviceConnect version
-      # Expected output: 4.23.0.202501010000.production@abc1234def
+      # Expected output: 2610.301328.0+master.10b8693
       ansible.builtin.command: "{{ dc_services_path }} --version"
       register: dc_version_output
       changed_when: false
