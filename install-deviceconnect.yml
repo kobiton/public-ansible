@@ -62,7 +62,7 @@
           /usr/local/deviceconnect/Services/{{ arch_map[ansible_architecture] }}/dc-services
 
     - name: Check installed deviceConnect version
-      # Expected output: 4.23.0.202501010000.production@abc1234def
+      # Expected output: 2610.301328.0+master.10b8693
       ansible.builtin.command: "{{ dc_services_path }} --version"
       register: dc_version_output
       changed_when: false

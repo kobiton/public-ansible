@@ -5,9 +5,9 @@
   gather_subset:
     - min
   vars:
-    # Matches: gigacap 4.22.0.202501010000.production@abc1234
-    # Captures: \1=4.23.0  \2=13b05d6
-    gigacap_version_regex: 'gigacap ([^.]+\.[^.]+\.[^.]+)\..*@([0-9a-f]+)'
+    # Prints "installed 2610.301328.0+10b8693-1"; the Version is the one in the deb's filename.
+    # The status keeps a removed package, whose Version dpkg still remembers, from counting as installed.
+    gigacap_dpkg_query: [dpkg-query, --show, "--showformat=${db:Status-Status} ${Version}", gigacap]
   pre_tasks:
     - name: Verify this is a Debian-based system
       ansible.builtin.assert:
@@ -27,7 +27,7 @@
         that:
           - deb_file | basename | regex_search('gigacap_([^_]+)_')
         fail_msg: >-
-          deb_file must match pattern gigacap_<version>+<commit>_<arch>.deb,
+          deb_file must match pattern gigacap_<version>_<arch>.deb,
           got: {{ deb_file | basename }}
 
     - name: Validate source file exists
@@ -49,27 +49,17 @@
           {{ (deb_file | basename | regex_search('gigacap_([^_]+)_', '\1'))[0] }}
 
     - name: Check installed gigacap version
-      # Expected output: gigacap 4.22.0.202501010000.production@abc1234
-      ansible.builtin.command: gigacap version
+      ansible.builtin.command:
+        argv: "{{ gigacap_dpkg_query }}"
       register: gigacap_version_output
       changed_when: false
       failed_when: false
 
-    - name: Extract installed version
-      vars:
-        version_line: "{{ gigacap_version_output.stdout_lines[0] | default('') }}"
-        version_parts: >-
-          {{ version_line
-             | regex_search(gigacap_version_regex, '\1', '\2')
-             | default([]) }}
+    - name: Set installed version
       ansible.builtin.set_fact:
-        installed_version: "{{ version_parts | join('+') }}"
-      when: gigacap_version_output.rc == 0
-
-    - name: Set empty version when gigacap is not installed
-      ansible.builtin.set_fact:
-        installed_version: ""
-      when: gigacap_version_output.rc != 0
+        installed_version: >-
+          {{ gigacap_version_output.stdout | regex_replace('^installed ', '')
+             if gigacap_version_output.stdout is match('installed ') else '' }}
 
     - name: Show version comparison
       ansible.builtin.debug:
@@ -101,17 +91,11 @@
             state: absent
 
         - name: Verify installed version matches desired version
-          ansible.builtin.command: gigacap version
+          ansible.builtin.command:
+            argv: "{{ gigacap_dpkg_query }}"
           register: post_install_output
           changed_when: false
-          vars:
-            version_line: "{{ post_install_output.stdout_lines[0] | default('') }}"
-            version_parts: >-
-              {{ version_line
-                 | regex_search(gigacap_version_regex, '\1', '\2')
-                 | default([]) }}
-            post_install_version: "{{ version_parts | join('+') }}"
-          failed_when: post_install_version != desired_version
+          failed_when: post_install_output.stdout != 'installed ' ~ desired_version
 
         - name: Show installed version
           ansible.builtin.debug:
